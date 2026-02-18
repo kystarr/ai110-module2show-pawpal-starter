@@ -15,6 +15,7 @@ Design Note - Class Relationships:
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Optional
@@ -276,6 +277,117 @@ class Owner:
     def __str__(self) -> str:
         """Returns a simple one-line description of the owner."""
         return f"{self.name} ({len(self.pets)} pet{'s' if len(self.pets) != 1 else ''}, {self.available_time_minutes} min/day)"
+
+    def save_to_json(self, filename: str = "data.json"):
+        """Save owner data (including all pets and tasks) to a JSON file.
+
+        Args:
+            filename: Path to the JSON file to write to
+
+        Raises:
+            IOError: If the file cannot be written
+        """
+        try:
+            # Build the data structure
+            data = {
+                "name": self.name,
+                "available_time_minutes": self.available_time_minutes,
+                "pets": []
+            }
+
+            # Serialize each pet and its tasks
+            for pet in self.pets:
+                pet_data = {
+                    "name": pet.name,
+                    "species": pet.species,
+                    "age": pet.age,
+                    "special_needs": pet.special_needs,
+                    "tasks": []
+                }
+
+                # Serialize each task
+                for task in pet.tasks:
+                    task_data = {
+                        "description": task.description,
+                        "duration_minutes": task.duration_minutes,
+                        "frequency": task.frequency,
+                        "completed": task.completed,
+                        "priority": task.priority,
+                        "task_type": task.task_type,
+                        "last_completed": task.last_completed.isoformat() if task.last_completed else None,
+                        "due_date": task.due_date.isoformat() if task.due_date else None,
+                        "scheduled_start_time": task.scheduled_start_time.isoformat() if task.scheduled_start_time else None
+                    }
+                    pet_data["tasks"].append(task_data)
+
+                data["pets"].append(pet_data)
+
+            # Write to file with nice formatting
+            with open(filename, 'w') as f:
+                json.dump(data, f, indent=2)
+
+        except IOError as e:
+            raise IOError(f"Failed to save data to {filename}: {e}")
+
+    @classmethod
+    def load_from_json(cls, filename: str = "data.json") -> Optional['Owner']:
+        """Load owner data (including all pets and tasks) from a JSON file.
+
+        Args:
+            filename: Path to the JSON file to read from
+
+        Returns:
+            Owner object reconstructed from the file, or None if file doesn't exist
+
+        Raises:
+            ValueError: If the JSON is corrupted or missing required fields
+        """
+        try:
+            # Read and parse the JSON file
+            with open(filename, 'r') as f:
+                data = json.load(f)
+
+            # Reconstruct the Owner object
+            owner = cls(
+                name=data["name"],
+                available_time_minutes=data["available_time_minutes"]
+            )
+
+            # Reconstruct each pet and its tasks
+            for pet_data in data.get("pets", []):
+                pet = Pet(
+                    name=pet_data["name"],
+                    species=pet_data["species"],
+                    age=pet_data["age"],
+                    special_needs=pet_data.get("special_needs")
+                )
+
+                # Reconstruct each task
+                for task_data in pet_data.get("tasks", []):
+                    task = Task(
+                        description=task_data["description"],
+                        duration_minutes=task_data["duration_minutes"],
+                        frequency=task_data["frequency"],
+                        completed=task_data.get("completed", False),
+                        priority=task_data.get("priority", "medium"),
+                        task_type=task_data.get("task_type", "other"),
+                        last_completed=datetime.fromisoformat(task_data["last_completed"]) if task_data.get("last_completed") else None,
+                        due_date=datetime.fromisoformat(task_data["due_date"]) if task_data.get("due_date") else None,
+                        scheduled_start_time=datetime.fromisoformat(task_data["scheduled_start_time"]) if task_data.get("scheduled_start_time") else None
+                    )
+                    pet.add_task(task)
+
+                owner.add_pet(pet)
+
+            return owner
+
+        except FileNotFoundError:
+            # File doesn't exist yet - this is normal on first run
+            return None
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Corrupted JSON in {filename}: {e}")
+        except KeyError as e:
+            raise ValueError(f"Missing required field in {filename}: {e}")
 
 
 # Helper functions for working with plan dictionaries

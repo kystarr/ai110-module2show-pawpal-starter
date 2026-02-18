@@ -10,7 +10,10 @@ import os
 # Add parent directory to path so we can import pawpal_system
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
+import json
+import tempfile
 from datetime import datetime, timedelta
+from pathlib import Path
 from pawpal_system import Pet, Task, Owner, Scheduler
 
 
@@ -627,6 +630,222 @@ def test_recurring_task_not_found_error():
     print("PASS: Recurring task error handling works correctly!\n")
 
 
+def test_owner_save_to_json():
+    """Test that owner data can be saved to JSON with proper structure."""
+    print("=== Testing Owner Save to JSON ===")
+
+    # Create test data with datetime fields
+    owner = Owner("Test Owner", 120)
+    pet = Pet("Buddy", "dog", 5, special_needs="Takes medication")
+
+    task1 = Task("Walk", 30, "daily", priority="high", task_type="walk")
+    task2 = Task("Feed", 10, "daily", priority="high", task_type="feeding")
+    task2.mark_complete()  # Mark one complete to test datetime serialization
+
+    pet.add_task(task1)
+    pet.add_task(task2)
+    owner.add_pet(pet)
+
+    # Save to temporary file
+    with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json') as f:
+        temp_file = f.name
+
+    try:
+        owner.save_to_json(temp_file)
+
+        # Read and verify JSON structure
+        with open(temp_file, 'r') as f:
+            data = json.load(f)
+
+        assert data['name'] == "Test Owner", "Owner name should be saved"
+        assert data['available_time_minutes'] == 120, "Available time should be saved"
+        assert len(data['pets']) == 1, "Should have 1 pet"
+
+        pet_data = data['pets'][0]
+        assert pet_data['name'] == "Buddy", "Pet name should be saved"
+        assert pet_data['species'] == "dog", "Pet species should be saved"
+        assert pet_data['age'] == 5, "Pet age should be saved"
+        assert pet_data['special_needs'] == "Takes medication", "Special needs should be saved"
+        assert len(pet_data['tasks']) == 2, "Should have 2 tasks"
+
+        # Verify task data
+        task_data = pet_data['tasks'][0]
+        assert task_data['description'] == "Walk", "Task description should be saved"
+        assert task_data['duration_minutes'] == 30, "Task duration should be saved"
+        assert task_data['frequency'] == "daily", "Task frequency should be saved"
+        assert task_data['priority'] == "high", "Task priority should be saved"
+        assert task_data['task_type'] == "walk", "Task type should be saved"
+        assert task_data['completed'] == False, "Task completion status should be saved"
+
+        # Verify completed task has datetime
+        completed_task_data = pet_data['tasks'][1]
+        assert completed_task_data['completed'] == True, "Completed task should be marked complete"
+        assert completed_task_data['last_completed'] is not None, "Completed task should have timestamp"
+
+        print("PASS: Owner data saved to JSON correctly!\n")
+
+    finally:
+        # Cleanup
+        Path(temp_file).unlink(missing_ok=True)
+
+
+def test_owner_load_from_json():
+    """Test that owner data can be loaded from JSON and reconstructed properly."""
+    print("=== Testing Owner Load from JSON ===")
+
+    # Create and save test data
+    original_owner = Owner("Test Owner", 120)
+    pet = Pet("Buddy", "dog", 5, special_needs="Medication needed")
+
+    task = Task("Walk", 30, "daily", priority="high", task_type="walk")
+    pet.add_task(task)
+    original_owner.add_pet(pet)
+
+    # Save to temporary file
+    with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json') as f:
+        temp_file = f.name
+
+    try:
+        original_owner.save_to_json(temp_file)
+
+        # Load from file
+        loaded_owner = Owner.load_from_json(temp_file)
+
+        # Verify owner data
+        assert loaded_owner is not None, "Should successfully load owner"
+        assert loaded_owner.name == "Test Owner", "Owner name should match"
+        assert loaded_owner.available_time_minutes == 120, "Available time should match"
+        assert len(loaded_owner.pets) == 1, "Should have 1 pet"
+
+        # Verify pet data
+        loaded_pet = loaded_owner.pets[0]
+        assert loaded_pet.name == "Buddy", "Pet name should match"
+        assert loaded_pet.species == "dog", "Pet species should match"
+        assert loaded_pet.age == 5, "Pet age should match"
+        assert loaded_pet.special_needs == "Medication needed", "Special needs should match"
+        assert len(loaded_pet.tasks) == 1, "Should have 1 task"
+
+        # Verify task data
+        loaded_task = loaded_pet.tasks[0]
+        assert loaded_task.description == "Walk", "Task description should match"
+        assert loaded_task.duration_minutes == 30, "Task duration should match"
+        assert loaded_task.frequency == "daily", "Task frequency should match"
+        assert loaded_task.priority == "high", "Task priority should match"
+        assert loaded_task.task_type == "walk", "Task type should match"
+        assert loaded_task.completed == False, "Task completion status should match"
+
+        print("PASS: Owner data loaded from JSON correctly!\n")
+
+    finally:
+        # Cleanup
+        Path(temp_file).unlink(missing_ok=True)
+
+
+def test_datetime_serialization():
+    """Test that datetime fields are properly serialized and deserialized."""
+    print("=== Testing Datetime Serialization ===")
+
+    owner = Owner("Test", 60)
+    pet = Pet("Max", "dog", 5)
+
+    # Create task with datetime fields set
+    task = Task("Morning walk", 30, "daily", priority="high", task_type="walk")
+    task.mark_complete()  # Sets last_completed
+    task.due_date = datetime.now() + timedelta(days=1)
+    task.scheduled_start_time = datetime.now().replace(hour=8, minute=0, second=0, microsecond=0)
+
+    pet.add_task(task)
+    owner.add_pet(pet)
+
+    # Save and load
+    with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json') as f:
+        temp_file = f.name
+
+    try:
+        owner.save_to_json(temp_file)
+        loaded_owner = Owner.load_from_json(temp_file)
+
+        loaded_task = loaded_owner.pets[0].tasks[0]
+
+        # Verify datetime fields were preserved
+        assert loaded_task.last_completed is not None, "last_completed should be preserved"
+        assert loaded_task.due_date is not None, "due_date should be preserved"
+        assert loaded_task.scheduled_start_time is not None, "scheduled_start_time should be preserved"
+
+        # Verify datetime values are close (within 1 second)
+        time_diff_completed = abs((loaded_task.last_completed - task.last_completed).total_seconds())
+        time_diff_due = abs((loaded_task.due_date - task.due_date).total_seconds())
+        time_diff_scheduled = abs((loaded_task.scheduled_start_time - task.scheduled_start_time).total_seconds())
+
+        assert time_diff_completed < 1, "last_completed should match within 1 second"
+        assert time_diff_due < 1, "due_date should match within 1 second"
+        assert time_diff_scheduled < 1, "scheduled_start_time should match within 1 second"
+
+        print("PASS: Datetime fields serialized and deserialized correctly!\n")
+
+    finally:
+        Path(temp_file).unlink(missing_ok=True)
+
+
+def test_load_missing_file():
+    """Test that loading from a non-existent file returns None gracefully."""
+    print("=== Testing Load from Missing File ===")
+
+    # Try to load from a file that doesn't exist
+    non_existent_file = "this_file_does_not_exist_12345.json"
+    loaded_owner = Owner.load_from_json(non_existent_file)
+
+    assert loaded_owner is None, "Should return None when file doesn't exist"
+    print("PASS: Missing file handled gracefully!\n")
+
+
+def test_load_corrupted_json():
+    """Test that loading corrupted JSON raises a ValueError."""
+    print("=== Testing Load from Corrupted JSON ===")
+
+    # Create a file with invalid JSON
+    with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json') as f:
+        temp_file = f.name
+        f.write("{ this is not valid JSON }")
+
+    try:
+        # Try to load corrupted file
+        try:
+            Owner.load_from_json(temp_file)
+            assert False, "Should have raised ValueError for corrupted JSON"
+        except ValueError as e:
+            assert "Corrupted JSON" in str(e), "Error message should mention corrupted JSON"
+            print(f"  Correctly raised ValueError: {e}")
+
+        print("PASS: Corrupted JSON handled with appropriate error!\n")
+
+    finally:
+        Path(temp_file).unlink(missing_ok=True)
+
+
+def test_save_load_empty_owner():
+    """Test saving and loading an owner with no pets."""
+    print("=== Testing Save/Load Empty Owner ===")
+
+    owner = Owner("Empty Owner", 60)
+
+    with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json') as f:
+        temp_file = f.name
+
+    try:
+        owner.save_to_json(temp_file)
+        loaded_owner = Owner.load_from_json(temp_file)
+
+        assert loaded_owner is not None, "Should load empty owner successfully"
+        assert loaded_owner.name == "Empty Owner", "Owner name should match"
+        assert len(loaded_owner.pets) == 0, "Should have no pets"
+
+        print("PASS: Empty owner saved and loaded correctly!\n")
+
+    finally:
+        Path(temp_file).unlink(missing_ok=True)
+
+
 def run_all_tests():
     """Run all tests."""
     print("=" * 60)
@@ -665,6 +884,14 @@ def run_all_tests():
         test_scheduler_conflict_detection()
         test_exact_duplicate_scheduled_times()
         test_adjacent_tasks_no_conflict()
+
+        # JSON persistence tests
+        test_owner_save_to_json()
+        test_owner_load_from_json()
+        test_datetime_serialization()
+        test_load_missing_file()
+        test_load_corrupted_json()
+        test_save_load_empty_owner()
 
         print("=" * 60)
         print("ALL TESTS PASSED!")

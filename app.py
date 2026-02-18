@@ -3,7 +3,19 @@ from pawpal_system import Owner, Pet, Task, Scheduler
 
 st.set_page_config(page_title="PawPal+", page_icon="🐾", layout="centered")
 
+
+# Helper function for priority visualization
+def get_priority_emoji(priority: str) -> str:
+    """Return emoji indicator for task priority."""
+    emoji_map = {
+        "high": "🔴",
+        "medium": "🟡",
+        "low": "🟢"
+    }
+    return emoji_map.get(priority.lower(), "⚪")
+
 st.title("🐾 PawPal+")
+st.caption("🎯 Priority Levels: 🔴 High  |  🟡 Medium  |  🟢 Low")
 
 st.markdown(
     """
@@ -45,7 +57,14 @@ available_time = st.number_input("Available time per day (minutes)", min_value=0
 
 # Initialize Owner in session state if it doesn't exist
 if "owner" not in st.session_state:
-    st.session_state.owner = Owner(name=owner_name, available_time_minutes=available_time)
+    # Try to load existing data
+    loaded_owner = Owner.load_from_json("data.json")
+    if loaded_owner is not None:
+        st.session_state.owner = loaded_owner
+        st.info(f"✅ Loaded saved data for {loaded_owner.name}")
+    else:
+        # No saved data, create new owner
+        st.session_state.owner = Owner(name=owner_name, available_time_minutes=available_time)
 
 st.markdown("### Add a Pet")
 col1, col2, col3 = st.columns(3)
@@ -60,6 +79,7 @@ if st.button("Add Pet"):
     # Create a new Pet object and add it to the Owner
     new_pet = Pet(name=pet_name, species=species, age=pet_age)
     st.session_state.owner.add_pet(new_pet)
+    st.session_state.owner.save_to_json("data.json")
     st.success(f"Added {pet_name} to {st.session_state.owner.name}'s pets!")
 
 # Display current pets
@@ -104,6 +124,7 @@ if st.session_state.owner.pets:
             task_type=task_type
         )
         selected_pet.add_task(new_task)
+        st.session_state.owner.save_to_json("data.json")
         st.success(f"Added task '{task_title}' to {selected_pet.name}!")
 
     # Display all tasks for all pets
@@ -119,6 +140,25 @@ if st.session_state.owner.pets:
         st.info("No tasks yet. Add one above.")
 else:
     st.info("Add a pet first before creating tasks.")
+
+st.divider()
+
+# Manual data management controls
+st.markdown("### 💾 Data Management")
+col1, col2 = st.columns(2)
+with col1:
+    if st.button("💾 Save Data"):
+        st.session_state.owner.save_to_json("data.json")
+        st.success("✅ Data saved successfully!")
+with col2:
+    if st.button("🔄 Reload Data"):
+        loaded = Owner.load_from_json("data.json")
+        if loaded:
+            st.session_state.owner = loaded
+            st.success("✅ Data reloaded!")
+            st.rerun()
+        else:
+            st.warning("⚠️ No saved data found.")
 
 st.divider()
 
@@ -168,6 +208,7 @@ if st.button("Generate Schedule", type="primary"):
         # Display scheduled tasks in a professional table
         if plan['scheduled_tasks']:
             st.markdown("#### ✅ Scheduled Tasks")
+            st.info("🎯 **Priority-Based Scheduling**: Tasks are sorted by priority (🔴 High → 🟡 Medium → 🟢 Low), then by duration to maximize efficiency within your time budget.")
 
             # Create a data table for better visualization
             import pandas as pd
@@ -185,7 +226,7 @@ if st.button("Generate Schedule", type="primary"):
                     "Task": task.description,
                     "Pet": pet_name,
                     "Duration": f"{task.duration_minutes} min",
-                    "Priority": task.priority.upper(),
+                    "Priority": f"{get_priority_emoji(task.priority)} {task.priority.upper()}",
                     "Type": task.task_type.capitalize(),
                     "Frequency": task.frequency.capitalize()
                 })
@@ -194,9 +235,9 @@ if st.button("Generate Schedule", type="primary"):
 
             # Color-code priority
             def highlight_priority(row):
-                if row['Priority'] == 'HIGH':
+                if 'HIGH' in row['Priority']:
                     return ['background-color: #ffcccc'] * len(row)
-                elif row['Priority'] == 'MEDIUM':
+                elif 'MEDIUM' in row['Priority']:
                     return ['background-color: #fff4cc'] * len(row)
                 else:
                     return ['background-color: #ccffcc'] * len(row)
@@ -229,7 +270,7 @@ if st.button("Generate Schedule", type="primary"):
                     "Task": task.description,
                     "Pet": pet_name,
                     "Duration": f"{task.duration_minutes} min",
-                    "Priority": task.priority.upper(),
+                    "Priority": f"{get_priority_emoji(task.priority)} {task.priority.upper()}",
                     "Type": task.task_type.capitalize()
                 })
 
@@ -240,10 +281,14 @@ if st.button("Generate Schedule", type="primary"):
         with st.expander("📊 Scheduling Reasoning & Algorithm Details"):
             st.write(plan['reasoning'])
             st.markdown("---")
-            st.caption(
-                "**Algorithm:** Greedy scheduling with priority-based sorting. "
-                "Time complexity: O(n log n) for sorting + O(n) for fitting = O(n log n) overall."
-            )
+            st.markdown("**🎯 Priority-Based Scheduling Algorithm:**")
+            st.markdown("""
+            - **Step 1:** Sort tasks by priority level (High → Medium → Low)
+            - **Step 2:** Within each priority level, sort by duration (shortest first)
+            - **Step 3:** Greedily fit tasks into available time budget
+            - **Complexity:** O(n log n) for sorting + O(n) for fitting = **O(n log n)** overall
+            """)
+            st.caption("💡 This ensures critical tasks (🔴 High priority) are always scheduled first!")
 
 # Advanced Task Analysis Section (only show if plan exists)
 if 'plan' in st.session_state and 'scheduler' in st.session_state:
@@ -319,7 +364,7 @@ if 'plan' in st.session_state and 'scheduler' in st.session_state:
                     "Task": task.description,
                     "Pet": pet_name,
                     "Duration": f"{task.duration_minutes} min",
-                    "Priority": task.priority.upper(),
+                    "Priority": f"{get_priority_emoji(task.priority)} {task.priority.upper()}",
                     "Type": task.task_type.capitalize(),
                     "Frequency": task.frequency.capitalize()
                 })

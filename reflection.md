@@ -111,3 +111,11 @@ I would add a visual caledar view to allow owners to see each task as it occurs 
 - What is one important thing you learned about designing systems or working with AI on this project?
 
 I learned that it is super important to design systems that compltely cover everything an app needs without being overly complex. A good app also needs to have good relationships that make sense.
+
+
+
+
+## Prompt Comparison
+
+
+Claude produced a practical, application-focused implementation that is easy to integrate. OpenAI produced a more modular and Pythonic architecture that prioritizes reusability, testability, and clean abstraction boundaries. For long-term maintainability and extensibility, the OpenAI design is stronger, even though both algorithms achieve the same scheduling goals.
