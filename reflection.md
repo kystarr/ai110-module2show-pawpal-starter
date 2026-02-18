@@ -2,16 +2,38 @@
 
 ## 1. System Design
 
+1. Add/Manage Pet and Owner Information
+Enter basic information about the pet owner (e.g., name, available time per day)
+Enter basic information about their pet (e.g., name, type, age, special needs)
+
+2. Add/Edit Pet Care Tasks
+Create new tasks with details like:
+Task type (walks, feeding, meds, enrichment, grooming, etc.)
+Duration (how long each task takes)
+Priority level (which tasks are most important)
+Edit or modify existing tasks as needs change
+
+3. Generate and View Daily Schedule
+Generate a daily care plan based on:
+Available time
+Task priorities
+Owner preferences and constraints
+View the schedule clearly with reasoning/explanations for why tasks were scheduled in that order
+
 **a. Initial design**
 
 - Briefly describe your initial UML design.
 - What classes did you include, and what responsibilities did you assign to each?
+
+There are five classes all stemming from the Scheduler Parent class. From there, the Scheduler class uses the Pet class, Owner class, creates the DailyPlan class, and manages the Task class. The Owner class has a Pet class, and the DailyPlan class contains the task class. Some responsibilites for each class include generate_plan() within the Scheduler class, has_time_for(task) within the Owner class, get_info() within the Pet class, add_task() within the DailyPlan class, and get_prioirity_score() responsibiliity within the Task class. 
 
 **b. Design changes**
 
 - Did your design change during implementation?
 - If yes, describe at least one change and why you made it.
 
+
+An extra class named DailyPlan was added in the UML diagram initially. It was removed to keep to the four classes instrudted to create in the project instructions. 
 ---
 
 ## 2. Scheduling Logic and Tradeoffs
