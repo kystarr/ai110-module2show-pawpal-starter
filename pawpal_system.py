@@ -16,6 +16,7 @@ Design Note - Class Relationships:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from typing import Optional
 
 
@@ -57,6 +58,50 @@ class Pet:
         """Returns only completed tasks for this pet."""
         return [task for task in self.tasks if task.completed]
 
+    def complete_recurring_task(self, task: Task) -> Optional[Task]:
+        """Complete a task and automatically create next instance if it's recurring.
+
+        Args:
+            task: The task to complete
+
+        Returns:
+            The newly created task instance if the task is recurring (daily/weekly),
+            None if the task is as-needed or not found
+
+        Logic:
+            - Daily tasks: Create new instance with due_date = today + 1 day
+            - Weekly tasks: Create new instance with due_date = today + 7 days
+            - As-needed tasks: Just mark complete, no new instance
+        """
+        if task not in self.tasks:
+            raise ValueError(f"Task '{task.description}' not found in {self.name}'s task list")
+
+        # Mark the original task as complete
+        task.mark_complete()
+
+        # Determine recurrence interval
+        recurrence_days = {
+            "daily": 1,
+            "weekly": 7
+        }.get(task.frequency)
+
+        # Create new instance for recurring tasks
+        if recurrence_days:
+            next_due = datetime.now() + timedelta(days=recurrence_days)
+            new_task = Task(
+                description=task.description,
+                duration_minutes=task.duration_minutes,
+                frequency=task.frequency,
+                priority=task.priority,
+                task_type=task.task_type,
+                due_date=next_due
+            )
+            self.add_task(new_task)
+            return new_task
+
+        # As-needed tasks don't recur automatically
+        return None
+
     def get_info(self) -> str:
         """Returns formatted pet information including task summary."""
         info = f"Pet: {self.name}\n"
@@ -86,6 +131,9 @@ class Task:
     completed: bool = False
     priority: str = "medium"  # "low", "medium", or "high"
     task_type: str = "other"  # "walk", "feeding", "meds", "grooming", "enrichment", "other"
+    last_completed: Optional[datetime] = None  # Tracks when task was last done
+    due_date: Optional[datetime] = None  # When this task is due (for recurring tasks)
+    scheduled_start_time: Optional[datetime] = None  # When this task is scheduled to start
 
     VALID_PRIORITIES = {"low", "medium", "high"}
     VALID_TASK_TYPES = {"walk", "feeding", "meds", "grooming", "enrichment", "other"}
@@ -106,16 +154,72 @@ class Task:
             raise ValueError(f"Invalid frequency '{self.frequency}'. Must be one of: {self.VALID_FREQUENCIES}")
 
     def mark_complete(self):
-        """Marks this task as completed."""
+        """Marks this task as completed and records completion time."""
         self.completed = True
+        self.last_completed = datetime.now()
 
     def mark_incomplete(self):
         """Marks this task as incomplete."""
         self.completed = False
 
+    def is_due(self, reference_date: Optional[datetime] = None) -> bool:
+        """Determines if this task is due based on its frequency and last completion.
+
+        Args:
+            reference_date: Date to check against (defaults to today)
+
+        Returns:
+            True if task should be scheduled, False otherwise
+
+        Logic:
+            - daily: Due if never completed OR last completed before today
+            - weekly: Due if never completed OR last completed 7+ days ago
+            - as-needed: Only due if never completed (manual tasks)
+        """
+        if reference_date is None:
+            reference_date = datetime.now()
+
+        # If never completed, all tasks are due except as-needed
+        if self.last_completed is None:
+            return self.frequency != "as-needed"
+
+        # Calculate days since last completion
+        days_since = (reference_date - self.last_completed).days
+
+        if self.frequency == "daily":
+            return days_since >= 1
+        elif self.frequency == "weekly":
+            return days_since >= 7
+        else:  # as-needed
+            return False  # Only done manually
+
     def get_priority_score(self) -> int:
         """Converts priority string to numeric value for sorting (3=high, 2=medium, 1=low)."""
         return self.PRIORITY_SCORES[self.priority]
+
+    def get_end_time(self) -> Optional[datetime]:
+        """Calculate when this task ends based on start time and duration."""
+        if self.scheduled_start_time is None:
+            return None
+        return self.scheduled_start_time + timedelta(minutes=self.duration_minutes)
+
+    def conflicts_with(self, other: 'Task') -> bool:
+        """Check if this task's time slot overlaps with another task.
+
+        Returns:
+            True if tasks have overlapping scheduled times, False otherwise
+        """
+        # Can't have conflict if either task doesn't have a scheduled time
+        if self.scheduled_start_time is None or other.scheduled_start_time is None:
+            return False
+
+        # Calculate end times
+        self_end = self.get_end_time()
+        other_end = other.get_end_time()
+
+        # Check for overlap: tasks conflict if one starts before the other ends
+        return (self.scheduled_start_time < other_end and
+                other.scheduled_start_time < self_end)
 
     def __str__(self) -> str:
         """Returns a formatted task description with completion status."""
@@ -184,6 +288,10 @@ def display_plan(plan: dict) -> str:
 
     output = f"=== Daily Plan for {owner.name} ({pets_str}) ===\n\n"
 
+    # Show conflict warning if present
+    if 'conflict_info' in plan and plan['conflict_info']['has_conflict']:
+        output += f"{plan['conflict_info']['message']}\n\n"
+
     if not plan['scheduled_tasks']:
         output += "No tasks scheduled.\n"
     else:
@@ -239,7 +347,14 @@ class Scheduler:
                 'remaining_time_minutes': self.owner.available_time_minutes,
                 'reasoning': "Owner has no pets to care for.",
                 'skipped_tasks': [],
-                'pets_count': 0
+                'pets_count': 0,
+                'conflict_info': {
+                    'has_conflict': False,
+                    'total_required_minutes': 0,
+                    'available_minutes': self.owner.available_time_minutes,
+                    'overflow_minutes': 0,
+                    'message': "OK: No conflicts. 0 minutes required, " + str(self.owner.available_time_minutes) + " available."
+                }
             }
 
         # Get all incomplete tasks from all pets
@@ -254,11 +369,19 @@ class Scheduler:
                 'remaining_time_minutes': self.owner.available_time_minutes,
                 'reasoning': "No incomplete tasks to schedule.",
                 'skipped_tasks': [],
-                'pets_count': len(self.owner.pets)
+                'pets_count': len(self.owner.pets),
+                'conflict_info': {
+                    'has_conflict': False,
+                    'total_required_minutes': 0,
+                    'available_minutes': self.owner.available_time_minutes,
+                    'overflow_minutes': 0,
+                    'message': "OK: No conflicts. 0 minutes required, " + str(self.owner.available_time_minutes) + " available."
+                }
             }
 
         # Edge case: no time available
         if self.owner.available_time_minutes == 0:
+            conflict_info = self.detect_time_conflicts(all_tasks)
             return {
                 'owner': self.owner,
                 'scheduled_tasks': [],
@@ -266,8 +389,12 @@ class Scheduler:
                 'remaining_time_minutes': 0,
                 'reasoning': "Owner has no available time for pet care tasks.",
                 'skipped_tasks': all_tasks.copy(),
-                'pets_count': len(self.owner.pets)
+                'pets_count': len(self.owner.pets),
+                'conflict_info': conflict_info
             }
+
+        # Detect upfront time conflicts
+        conflict_info = self.detect_time_conflicts(all_tasks)
 
         # Step 1: Prioritize tasks (sort by priority score, highest first)
         sorted_tasks = self.prioritize_tasks(all_tasks)
@@ -293,7 +420,8 @@ class Scheduler:
             'remaining_time_minutes': remaining_time,
             'reasoning': reasoning,
             'skipped_tasks': skipped_tasks,
-            'pets_count': len(self.owner.pets)
+            'pets_count': len(self.owner.pets),
+            'conflict_info': conflict_info
         }
 
     def prioritize_tasks(self, tasks: list[Task]) -> list[Task]:
@@ -315,6 +443,374 @@ class Scheduler:
                 remaining_time -= task.duration_minutes
 
         return selected
+
+    def filter_by_completion_status(self, tasks: list[Task], completed: bool) -> list[Task]:
+        """Filter tasks by completion status.
+
+        This method uses a simple linear search to filter tasks based on their
+        completion status. Useful for separating completed from incomplete tasks
+        in reports or when generating schedules.
+
+        Algorithm:
+            - Time Complexity: O(n) where n is the number of tasks
+            - Space Complexity: O(k) where k is the number of matching tasks
+
+        Args:
+            tasks: List of tasks to filter
+            completed: True to get completed tasks, False for incomplete
+
+        Returns:
+            Filtered list of tasks matching the completion status
+
+        Example:
+            >>> all_tasks = owner.get_all_tasks()
+            >>> incomplete = scheduler.filter_by_completion_status(all_tasks, False)
+            >>> completed = scheduler.filter_by_completion_status(all_tasks, True)
+        """
+        return [task for task in tasks if task.completed == completed]
+
+    def filter_by_pet(self, tasks: list[Task], pet_name: str) -> list[Task]:
+        """Filter tasks to only those belonging to a specific pet.
+
+        This method searches through the owner's pets to find the matching pet,
+        then returns the intersection of that pet's tasks with the provided task list.
+        Case-insensitive pet name matching is used for convenience.
+
+        Algorithm:
+            - Time Complexity: O(p + m*n) where p is number of pets, m is matching pet's
+              tasks, and n is input tasks (worst case). Early return optimizes common case.
+            - Space Complexity: O(k) where k is number of matching tasks
+
+        Args:
+            tasks: List of tasks to filter (typically from owner.get_all_tasks())
+            pet_name: Name of the pet to filter by (case-insensitive)
+
+        Returns:
+            List of tasks belonging to the specified pet. Empty list if pet not found
+            or if the pet has no tasks matching the input list.
+
+        Example:
+            >>> all_tasks = owner.get_all_incomplete_tasks()
+            >>> max_tasks = scheduler.filter_by_pet(all_tasks, "Max")
+            >>> luna_tasks = scheduler.filter_by_pet(all_tasks, "Luna")
+        """
+        # Find the matching pet and return intersection of their tasks with input
+        for pet in self.owner.pets:
+            if pet.name.lower() == pet_name.lower():
+                return [task for task in pet.tasks if task in tasks]
+        return []  # Pet not found
+
+    def filter_by_task_type(self, tasks: list[Task], task_type: str) -> list[Task]:
+        """Filter tasks by their type (walk, feeding, meds, etc.).
+
+        This method filters tasks to return only those matching a specific type.
+        Useful for generating type-specific reports (e.g., "all feeding tasks") or
+        for building specialized schedules.
+
+        Algorithm:
+            - Time Complexity: O(n) where n is the number of tasks
+            - Space Complexity: O(k) where k is the number of matching tasks
+
+        Args:
+            tasks: List of tasks to filter
+            task_type: The task type to filter by. Must be one of:
+                      "walk", "feeding", "meds", "grooming", "enrichment", "other"
+
+        Returns:
+            Filtered list of tasks of the specified type
+
+        Raises:
+            ValueError: If task_type is not in Task.VALID_TASK_TYPES
+
+        Example:
+            >>> all_tasks = owner.get_all_tasks()
+            >>> feeding_tasks = scheduler.filter_by_task_type(all_tasks, "feeding")
+            >>> walk_tasks = scheduler.filter_by_task_type(all_tasks, "walk")
+        """
+        if task_type not in Task.VALID_TASK_TYPES:
+            raise ValueError(f"Invalid task_type '{task_type}'. Must be one of: {Task.VALID_TASK_TYPES}")
+        return [task for task in tasks if task.task_type == task_type]
+
+    def filter_by_frequency(self, tasks: list[Task], frequency: str) -> list[Task]:
+        """Filter tasks by their frequency (daily, weekly, as-needed).
+
+        This method filters tasks based on how often they need to be performed.
+        Useful for identifying recurring vs. one-time tasks, or for building
+        frequency-specific schedules.
+
+        Algorithm:
+            - Time Complexity: O(n) where n is the number of tasks
+            - Space Complexity: O(k) where k is the number of matching tasks
+
+        Args:
+            tasks: List of tasks to filter
+            frequency: The frequency to filter by. Must be one of:
+                      "daily", "weekly", "as-needed"
+
+        Returns:
+            Filtered list of tasks with the specified frequency
+
+        Raises:
+            ValueError: If frequency is not in Task.VALID_FREQUENCIES
+
+        Example:
+            >>> all_tasks = owner.get_all_tasks()
+            >>> daily_tasks = scheduler.filter_by_frequency(all_tasks, "daily")
+            >>> weekly_tasks = scheduler.filter_by_frequency(all_tasks, "weekly")
+        """
+        if frequency not in Task.VALID_FREQUENCIES:
+            raise ValueError(f"Invalid frequency '{frequency}'. Must be one of: {Task.VALID_FREQUENCIES}")
+        return [task for task in tasks if task.frequency == frequency]
+
+    def filter_due_tasks(self, tasks: list[Task], reference_date: Optional[datetime] = None) -> list[Task]:
+        """Filter tasks to only those that are due today based on frequency.
+
+        This method filters tasks based on their recurrence logic, considering when
+        they were last completed and their frequency. Essential for generating
+        accurate daily schedules that respect recurring task patterns.
+
+        Algorithm:
+            - Time Complexity: O(n) where n is the number of tasks
+            - Space Complexity: O(k) where k is the number of due tasks
+            - Delegates to Task.is_due() for recurrence logic
+
+        Recurrence Logic:
+            - Daily tasks: Due if never completed OR last completed 1+ days ago
+            - Weekly tasks: Due if never completed OR last completed 7+ days ago
+            - As-needed tasks: Only due if never completed (manual scheduling)
+
+        Args:
+            tasks: List of tasks to filter
+            reference_date: Date to check against (defaults to today). Useful for
+                           testing or generating future schedules.
+
+        Returns:
+            List of tasks that are due based on their frequency and last completion
+
+        Example:
+            >>> all_tasks = owner.get_all_tasks()
+            >>> due_today = scheduler.filter_due_tasks(all_tasks)
+            >>> # Check what would be due tomorrow
+            >>> tomorrow = datetime.now() + timedelta(days=1)
+            >>> due_tomorrow = scheduler.filter_due_tasks(all_tasks, tomorrow)
+        """
+        return [task for task in tasks if task.is_due(reference_date)]
+
+    def sort_by_duration(self, tasks: list[Task], ascending: bool = True) -> list[Task]:
+        """Sort tasks by their duration (time to complete).
+
+        This method sorts tasks by how long they take, which is useful for:
+        - Quick-win strategies (shortest tasks first)
+        - Time-filling algorithms (longest tasks first)
+        - Visualizing task time distribution
+
+        Algorithm:
+            - Time Complexity: O(n log n) - uses Python's Timsort
+            - Space Complexity: O(n) - creates new sorted list
+            - Stable sort: preserves original order for equal durations
+
+        Args:
+            tasks: List of tasks to sort
+            ascending: True for shortest first, False for longest first
+
+        Returns:
+            Sorted list of tasks by duration (does not modify input list)
+
+        Example:
+            >>> all_tasks = owner.get_all_incomplete_tasks()
+            >>> # Quick wins: do shortest tasks first
+            >>> quick_wins = scheduler.sort_by_duration(all_tasks, ascending=True)
+            >>> # Fill large blocks: do longest tasks first
+            >>> longest_first = scheduler.sort_by_duration(all_tasks, ascending=False)
+        """
+        return sorted(tasks, key=lambda task: task.duration_minutes, reverse=not ascending)
+
+    def sort_by_task_type(self, tasks: list[Task]) -> list[Task]:
+        """Sort tasks by logical time-of-day order based on task type.
+
+        This method orders tasks according to typical pet care routines, where
+        time-sensitive tasks (feeding, medication) come before flexible activities
+        (grooming, play). This creates a natural daily schedule flow.
+
+        Sorting Order: feeding → meds → walk → grooming → enrichment → other
+
+        Algorithm:
+            - Time Complexity: O(n log n) - uses Python's Timsort
+            - Space Complexity: O(n) - creates new sorted list
+            - Stable sort: preserves original order within same type
+
+        Rationale:
+            - Feeding: Often time-critical (morning/evening)
+            - Meds: Must follow feeding or specific schedule
+            - Walk: Best done after feeding settles
+            - Grooming: Flexible timing, moderate importance
+            - Enrichment: Play/training, flexible timing
+            - Other: Miscellaneous tasks, lowest priority for ordering
+
+        Args:
+            tasks: List of tasks to sort
+
+        Returns:
+            Sorted list with time-critical tasks first (does not modify input)
+
+        Example:
+            >>> all_tasks = owner.get_all_incomplete_tasks()
+            >>> routine_order = scheduler.sort_by_task_type(all_tasks)
+            >>> # First tasks will be feeding, then meds, then walks, etc.
+        """
+        type_priority = {
+            "feeding": 1,
+            "meds": 2,
+            "walk": 3,
+            "grooming": 4,
+            "enrichment": 5,
+            "other": 6
+        }
+        return sorted(tasks, key=lambda task: type_priority.get(task.task_type, 99))
+
+    def complete_task_with_recurrence(self, task: Task) -> Optional[Task]:
+        """Complete a task and automatically create next instance if recurring.
+
+        This is a convenience method that finds which pet owns the task and
+        delegates to that pet's complete_recurring_task method. It automates
+        the recurring task lifecycle for daily and weekly tasks.
+
+        Algorithm:
+            - Time Complexity: O(p * t) where p is number of pets and t is average
+              tasks per pet (linear search through all tasks)
+            - Space Complexity: O(1) for search, O(1) for new task creation
+
+        Recurrence Logic:
+            - Daily tasks: Creates new instance with due_date = today + 1 day
+            - Weekly tasks: Creates new instance with due_date = today + 7 days
+            - As-needed tasks: Just marks complete, no new instance created
+
+        Args:
+            task: The task to complete
+
+        Returns:
+            The newly created Task instance if the task is recurring (daily/weekly),
+            None if the task is as-needed or does not recur
+
+        Raises:
+            ValueError: If task is not found in any pet's task list
+
+        Example:
+            >>> task = daily_tasks[0]  # A daily feeding task
+            >>> new_task = scheduler.complete_task_with_recurrence(task)
+            >>> # Original task is now completed
+            >>> # new_task is scheduled for tomorrow with same properties
+        """
+        for pet in self.owner.pets:
+            if task in pet.tasks:
+                return pet.complete_recurring_task(task)
+
+        raise ValueError(f"Task '{task.description}' not found in any pet's task list")
+
+    def detect_scheduling_conflicts(self, tasks: list[Task]) -> list[dict]:
+        """Detect time slot conflicts where tasks overlap in their scheduled times.
+
+        This method performs pairwise comparison of all tasks to detect overlapping
+        time slots. Uses interval overlap detection: two tasks conflict if one starts
+        before the other ends. Essential for preventing impossible schedules.
+
+        Algorithm:
+            - Time Complexity: O(n²) where n is number of tasks (checks all pairs)
+            - Space Complexity: O(k) where k is number of conflicts found
+            - Uses Task.conflicts_with() for interval overlap logic
+
+        Conflict Detection Logic:
+            Tasks A and B conflict if:
+            - Both have scheduled_start_time set, AND
+            - A.start < B.end AND B.start < A.end
+            (Standard interval overlap algorithm)
+
+        Args:
+            tasks: List of tasks with scheduled_start_time to check. Tasks without
+                   scheduled_start_time are ignored (can't conflict if not scheduled).
+
+        Returns:
+            List of conflict dictionaries, each containing:
+            - 'task1': First conflicting task
+            - 'task2': Second conflicting task
+            - 'message': Human-readable description with times and pet names
+            Empty list if no conflicts found.
+
+        Example:
+            >>> # Create tasks with overlapping times
+            >>> walk = Task("Walk Max", 30, "daily", scheduled_start_time=datetime(2025,1,15,8,0))
+            >>> feed = Task("Feed Max", 10, "daily", scheduled_start_time=datetime(2025,1,15,8,15))
+            >>> conflicts = scheduler.detect_scheduling_conflicts([walk, feed])
+            >>> if conflicts:
+            ...     print(conflicts[0]['message'])
+            "SCHEDULING CONFLICT: 'Walk Max' (Max) at 08:00 AM overlaps with..."
+
+        Note:
+            This is a "lightweight" conflict detection strategy that only checks
+            scheduled time overlaps. It does NOT check resource conflicts (e.g.,
+            whether owner can physically do two tasks at once for different pets).
+        """
+        conflicts = []
+
+        # Check every pair of tasks for time conflicts
+        for i, task1 in enumerate(tasks):
+            for task2 in tasks[i+1:]:
+                if task1.conflicts_with(task2):
+                    # Helper to find pet name for a task
+                    def get_pet_name(task):
+                        for pet in self.owner.pets:
+                            if task in pet.tasks:
+                                return pet.name
+                        return "Unknown"
+
+                    conflicts.append({
+                        'task1': task1,
+                        'task2': task2,
+                        'message': (
+                            f"SCHEDULING CONFLICT: '{task1.description}' ({get_pet_name(task1)}) "
+                            f"at {task1.scheduled_start_time.strftime('%I:%M %p')} "
+                            f"overlaps with '{task2.description}' ({get_pet_name(task2)}) "
+                            f"at {task2.scheduled_start_time.strftime('%I:%M %p')}"
+                        )
+                    })
+
+        return conflicts
+
+    def detect_time_conflicts(self, tasks: list[Task]) -> dict:
+        """Detect if total task time exceeds available time budget.
+
+        Args:
+            tasks: List of tasks to check
+
+        Returns:
+            Dictionary with conflict information:
+            {
+                'has_conflict': bool,
+                'total_required_minutes': int,
+                'available_minutes': int,
+                'overflow_minutes': int,
+                'message': str
+            }
+        """
+        total_required = sum(task.duration_minutes for task in tasks)
+        available = self.owner.available_time_minutes
+        overflow = max(0, total_required - available)
+
+        has_conflict = total_required > available
+
+        if has_conflict:
+            message = (f"WARNING: Time conflict detected! Need {total_required} minutes "
+                      f"but only {available} available. {overflow} minutes over budget.")
+        else:
+            message = f"OK: No conflicts. {total_required} minutes required, {available} available."
+
+        return {
+            'has_conflict': has_conflict,
+            'total_required_minutes': total_required,
+            'available_minutes': available,
+            'overflow_minutes': overflow,
+            'message': message
+        }
 
     def build_reasoning(self, selected_tasks: list[Task], rejected_tasks: list[Task]) -> str:
         """Generates human-readable explanation text for scheduling decisions."""

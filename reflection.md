@@ -43,10 +43,15 @@ An extra class named DailyPlan was added in the UML diagram initially. It was re
 - What constraints does your scheduler consider (for example: time, priority, preferences)?
 - How did you decide which constraints mattered most?
 
+Some constraints that Scheduler cosiders are task priority, budgeted time, task duration, completion status, and conflict awareness. These matter most bescause the amount of time owners have is limited, prioirity markings will help owners decide how to best take care of their pet, and duration will be used to imporve efficiency and ensure the schedule fits within the alloted time. 
+
+
 **b. Tradeoffs**
 
 - Describe one tradeoff your scheduler makes.
 - Why is that tradeoff reasonable for this scenario?
+
+A tradeoff that Scheduler makes is using a greedy algorithm instead of computing the mathematically optimal schedule. So, it'ss select tasks in prioirty order and adds them if they fit instead of ecploriing all possible combinations of tasks. One reason this tradeoff is reasonable because speed and effiecincy matter more than perfect optimality. Pet owners need quick and easy to understand schedules. Also, the schedules that are produced with this algorithm are still high quality. 
 
 ---
 
