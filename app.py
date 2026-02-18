@@ -125,37 +125,208 @@ st.divider()
 st.subheader("Build Schedule")
 st.caption("Generate an optimized daily schedule based on your pets' tasks and available time.")
 
-if st.button("Generate Schedule"):
+if st.button("Generate Schedule", type="primary"):
     if not st.session_state.owner.pets:
-        st.warning("Please add at least one pet before generating a schedule.")
+        st.warning("⚠️ Please add at least one pet before generating a schedule.")
     elif not st.session_state.owner.get_all_tasks():
-        st.warning("Please add at least one task before generating a schedule.")
+        st.warning("⚠️ Please add at least one task before generating a schedule.")
     else:
         # Create a Scheduler and generate the plan
         scheduler = Scheduler(st.session_state.owner)
         plan = scheduler.generate_plan()
 
-        # Display the plan
-        st.success("Schedule generated!")
+        # Store plan in session state for viewing/filtering
+        st.session_state.plan = plan
+        st.session_state.scheduler = scheduler
 
-        st.markdown(f"### Daily Plan for {plan['owner'].name}")
-        st.write(f"**Pets:** {plan['pets_count']}")
-
-        if plan['scheduled_tasks']:
-            st.markdown("**Scheduled Tasks:**")
-            for i, task in enumerate(plan['scheduled_tasks'], 1):
-                st.write(f"{i}. {task}")
+        # Display conflict warnings prominently
+        conflict_info = plan['conflict_info']
+        if conflict_info['has_conflict']:
+            st.error(f"⚠️ {conflict_info['message']}")
+            st.warning(
+                f"**Time Budget Issue:** You have {conflict_info['overflow_minutes']} minutes "
+                f"of overflow. Consider increasing available time or reducing task load."
+            )
         else:
-            st.info("No tasks could be scheduled.")
+            st.success(f"✅ {conflict_info['message']}")
 
-        st.markdown("**Time Summary:**")
-        st.write(f"- Total scheduled: {plan['total_time_minutes']} minutes")
-        st.write(f"- Remaining time: {plan['remaining_time_minutes']} minutes")
+        # Display the plan header
+        st.markdown(f"### 📋 Daily Plan for {plan['owner'].name}")
 
+        # Time summary with visual progress bar
+        time_used_pct = (plan['total_time_minutes'] / max(plan['owner'].available_time_minutes, 1)) * 100
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Total Scheduled", f"{plan['total_time_minutes']} min")
+        with col2:
+            st.metric("Remaining Time", f"{plan['remaining_time_minutes']} min")
+        with col3:
+            st.metric("Pets", plan['pets_count'])
+
+        st.progress(min(time_used_pct / 100, 1.0), text=f"Time Utilization: {time_used_pct:.1f}%")
+
+        # Display scheduled tasks in a professional table
+        if plan['scheduled_tasks']:
+            st.markdown("#### ✅ Scheduled Tasks")
+
+            # Create a data table for better visualization
+            import pandas as pd
+            task_data = []
+            for i, task in enumerate(plan['scheduled_tasks'], 1):
+                # Find which pet owns this task
+                pet_name = "Unknown"
+                for pet in st.session_state.owner.pets:
+                    if task in pet.tasks:
+                        pet_name = pet.name
+                        break
+
+                task_data.append({
+                    "#": i,
+                    "Task": task.description,
+                    "Pet": pet_name,
+                    "Duration": f"{task.duration_minutes} min",
+                    "Priority": task.priority.upper(),
+                    "Type": task.task_type.capitalize(),
+                    "Frequency": task.frequency.capitalize()
+                })
+
+            df = pd.DataFrame(task_data)
+
+            # Color-code priority
+            def highlight_priority(row):
+                if row['Priority'] == 'HIGH':
+                    return ['background-color: #ffcccc'] * len(row)
+                elif row['Priority'] == 'MEDIUM':
+                    return ['background-color: #fff4cc'] * len(row)
+                else:
+                    return ['background-color: #ccffcc'] * len(row)
+
+            styled_df = df.style.apply(highlight_priority, axis=1)
+            st.dataframe(styled_df, use_container_width=True, hide_index=True)
+        else:
+            st.info("ℹ️ No tasks could be scheduled.")
+
+        # Display skipped tasks with warning
         if plan['skipped_tasks']:
-            st.markdown(f"**Skipped Tasks ({len(plan['skipped_tasks'])}):**")
-            for task in plan['skipped_tasks']:
-                st.write(f"- {task}")
+            st.markdown(f"#### ⏭️ Skipped Tasks ({len(plan['skipped_tasks'])})")
+            st.warning(
+                f"The following tasks could not fit in the available time budget. "
+                f"Consider rescheduling or increasing available time."
+            )
 
-        with st.expander("Scheduling Reasoning"):
+            # Create skipped tasks table
+            import pandas as pd
+            skipped_data = []
+            for task in plan['skipped_tasks']:
+                # Find which pet owns this task
+                pet_name = "Unknown"
+                for pet in st.session_state.owner.pets:
+                    if task in pet.tasks:
+                        pet_name = pet.name
+                        break
+
+                skipped_data.append({
+                    "Task": task.description,
+                    "Pet": pet_name,
+                    "Duration": f"{task.duration_minutes} min",
+                    "Priority": task.priority.upper(),
+                    "Type": task.task_type.capitalize()
+                })
+
+            skipped_df = pd.DataFrame(skipped_data)
+            st.dataframe(skipped_df, use_container_width=True, hide_index=True)
+
+        # Scheduling reasoning in expander
+        with st.expander("📊 Scheduling Reasoning & Algorithm Details"):
             st.write(plan['reasoning'])
+            st.markdown("---")
+            st.caption(
+                "**Algorithm:** Greedy scheduling with priority-based sorting. "
+                "Time complexity: O(n log n) for sorting + O(n) for fitting = O(n log n) overall."
+            )
+
+# Advanced Task Analysis Section (only show if plan exists)
+if 'plan' in st.session_state and 'scheduler' in st.session_state:
+    st.divider()
+    st.subheader("📊 Advanced Task Analysis")
+    st.caption("Explore your tasks with different sorting and filtering options")
+
+    scheduler = st.session_state.scheduler
+    all_tasks = st.session_state.owner.get_all_tasks()
+
+    if all_tasks:
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.markdown("**Sort Tasks By:**")
+            sort_option = st.radio(
+                "Choose sorting method:",
+                ["Priority (Default)", "Duration (Shortest First)", "Duration (Longest First)", "Task Type Order"],
+                label_visibility="collapsed"
+            )
+
+        with col2:
+            st.markdown("**Filter Tasks By:**")
+            filter_option = st.selectbox(
+                "Choose filter:",
+                ["All Tasks", "Completed Only", "Incomplete Only", "By Pet", "By Task Type", "By Frequency"]
+            )
+
+        # Apply filtering
+        filtered_tasks = all_tasks.copy()
+
+        if filter_option == "Completed Only":
+            filtered_tasks = scheduler.filter_by_completion_status(all_tasks, completed=True)
+        elif filter_option == "Incomplete Only":
+            filtered_tasks = scheduler.filter_by_completion_status(all_tasks, completed=False)
+        elif filter_option == "By Pet":
+            if st.session_state.owner.pets:
+                selected_pet = st.selectbox("Select pet:", [pet.name for pet in st.session_state.owner.pets])
+                filtered_tasks = scheduler.filter_by_pet(all_tasks, selected_pet)
+        elif filter_option == "By Task Type":
+            selected_type = st.selectbox("Select type:", ["walk", "feeding", "meds", "grooming", "enrichment", "other"])
+            filtered_tasks = scheduler.filter_by_task_type(all_tasks, selected_type)
+        elif filter_option == "By Frequency":
+            selected_freq = st.selectbox("Select frequency:", ["daily", "weekly", "as-needed"])
+            filtered_tasks = scheduler.filter_by_frequency(all_tasks, selected_freq)
+
+        # Apply sorting
+        if sort_option == "Priority (Default)":
+            sorted_tasks = scheduler.prioritize_tasks(filtered_tasks)
+        elif sort_option == "Duration (Shortest First)":
+            sorted_tasks = scheduler.sort_by_duration(filtered_tasks, ascending=True)
+        elif sort_option == "Duration (Longest First)":
+            sorted_tasks = scheduler.sort_by_duration(filtered_tasks, ascending=False)
+        elif sort_option == "Task Type Order":
+            sorted_tasks = scheduler.sort_by_task_type(filtered_tasks)
+
+        # Display results
+        if sorted_tasks:
+            st.success(f"Found {len(sorted_tasks)} task(s)")
+
+            import pandas as pd
+            analysis_data = []
+            for task in sorted_tasks:
+                # Find which pet owns this task
+                pet_name = "Unknown"
+                for pet in st.session_state.owner.pets:
+                    if task in pet.tasks:
+                        pet_name = pet.name
+                        break
+
+                analysis_data.append({
+                    "Status": "✅" if task.completed else "⬜",
+                    "Task": task.description,
+                    "Pet": pet_name,
+                    "Duration": f"{task.duration_minutes} min",
+                    "Priority": task.priority.upper(),
+                    "Type": task.task_type.capitalize(),
+                    "Frequency": task.frequency.capitalize()
+                })
+
+            analysis_df = pd.DataFrame(analysis_data)
+            st.dataframe(analysis_df, use_container_width=True, hide_index=True)
+        else:
+            st.info("No tasks match the selected filter.")
+    else:
+        st.info("Add tasks to see analysis options.")

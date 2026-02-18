@@ -22,6 +22,71 @@ Your final app should:
 - Display the plan clearly (and ideally explain the reasoning)
 - Include tests for the most important scheduling behaviors
 
+## Features
+
+### 🎯 Core Scheduling Algorithm
+- **Greedy Priority-Based Scheduling** - O(n log n) algorithm that prioritizes high-priority tasks and fits them into available time budget
+- **Time Budget Management** - Respects owner's daily available time constraint
+- **Multi-Pet Support** - Schedules tasks across multiple pets simultaneously
+- **Task Prioritization** - Sorts tasks by priority level (high → medium → low) with duration as tiebreaker
+- **Greedy Task Fitting** - Selects tasks that fit within time budget using knapsack-style algorithm
+
+### 🔍 Advanced Filtering
+- **Filter by Completion Status** - Separate completed from incomplete tasks
+- **Filter by Pet** - View tasks for specific pets (case-insensitive name matching)
+- **Filter by Task Type** - Segment by walk, feeding, meds, grooming, enrichment, or other
+- **Filter by Frequency** - Isolate daily, weekly, or as-needed tasks
+- **Filter by Due Date** - Smart filtering based on recurrence logic and last completion time
+
+### 📊 Intelligent Sorting
+- **Sort by Duration** - Order tasks shortest-first or longest-first for different scheduling strategies
+- **Sort by Priority** - Organize tasks by importance level
+- **Sort by Task Type** - Arrange in logical daily routine order (feeding → meds → walk → grooming → enrichment → other)
+
+### 🔄 Recurring Task Automation
+- **Daily Recurrence** - Automatically creates next instance due tomorrow when completed
+- **Weekly Recurrence** - Automatically creates next instance due in 7 days when completed
+- **As-Needed Tasks** - Manual tasks that don't auto-recur
+- **Smart Due Date Calculation** - Determines if tasks are due based on frequency and last completion
+- **Automatic Task Lifecycle** - Handles completion and regeneration seamlessly
+
+### ⚠️ Conflict Detection
+- **Time Budget Conflict Detection** - Warns when total task duration exceeds available time
+- **Overflow Calculation** - Shows exactly how many minutes over budget
+- **Scheduling Time Slot Conflicts** - Detects overlapping scheduled times using interval overlap algorithm
+- **Upfront Warnings** - Displays conflicts before schedule generation
+- **Detailed Conflict Messages** - Shows which tasks conflict, when, and for which pet
+
+### 📋 Task Management
+- **Task Prioritization** - Three levels: high, medium, low
+- **Task Categorization** - Six types: walk, feeding, meds, grooming, enrichment, other
+- **Frequency Settings** - Daily, weekly, or as-needed scheduling
+- **Duration Tracking** - Records how long each task takes
+- **Completion Tracking** - Timestamps when tasks are completed
+- **Validation** - Ensures all task attributes are valid on creation
+
+### 🎨 Professional UI Features
+- **Color-Coded Priority Tables** - Red (high), yellow (medium), green (low) backgrounds
+- **Time Utilization Progress Bar** - Visual display of schedule fullness
+- **Metrics Dashboard** - Shows total scheduled time, remaining time, and pet count
+- **Scheduled vs Skipped Tasks** - Clear separation with explanatory warnings
+- **Scheduling Reasoning Display** - Explains why tasks were chosen or skipped
+- **Interactive Task Analysis** - Real-time sorting and filtering in UI
+- **Algorithm Transparency** - Shows complexity analysis (O(n log n)) in UI
+
+### 🧪 Quality Assurance
+- **20 Comprehensive Tests** - Full coverage of scheduling, filtering, sorting, and conflict detection
+- **Edge Case Handling** - Handles empty owners, zero time budgets, no incomplete tasks
+- **Error Handling** - Clear error messages for invalid operations
+- **Input Validation** - Prevents invalid priority, type, and frequency values
+
+### 📈 Algorithm Complexity
+- **Filtering Operations**: O(n) - Linear time
+- **Sorting Operations**: O(n log n) - Optimal comparison-based sorting
+- **Time Conflict Detection**: O(n) - Single pass summation
+- **Scheduling Conflict Detection**: O(n²) - Pairwise comparison
+- **Overall Schedule Generation**: O(n log n) - Dominated by sorting step
+
 ## Getting started
 
 ### Setup
@@ -219,3 +284,9 @@ The test suite includes **20 comprehensive tests** covering:
 ⚠️ **Real-World Usage** - System is new and hasn't undergone extensive real-world usage patterns
 
 **Recommendation:** The backend logic ([pawpal_system.py](pawpal_system.py)) is production-ready for pet care scheduling. The system reliably handles complex scenarios like multi-pet households, recurring tasks, and time conflicts. Consider adding integration tests for the Streamlit UI layer to achieve 5-star confidence.
+
+
+
+📸 Demo
+![alt text](image.png)
+![alt text](image-1.png)

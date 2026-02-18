@@ -62,10 +62,14 @@ A tradeoff that Scheduler makes is using a greedy algorithm instead of computing
 - How did you use AI tools during this project (for example: design brainstorming, debugging, refactoring)?
 - What kinds of prompts or questions were most helpful?
 
+I used AI tools to help with each step in the project instructions, so designing the UML diagram, brainstorming, etc. I found that telling AI what the app is supposed to be doing, as well as which phase I was on and how it should be completed were helpful when prompt engineering.
+
 **b. Judgment and verification**
 
 - Describe one moment where you did not accept an AI suggestion as-is.
 - How did you evaluate or verify what the AI suggested?
+
+Once, when creating the final UML diagram, Claude wanted to make a markdown file instead of giving the code to paste into mermaid.live. I evaluated the file, then rejected it once deciding it was too complex and outside of the rules of the assignment. 
 
 ---
 
@@ -76,10 +80,15 @@ A tradeoff that Scheduler makes is using a greedy algorithm instead of computing
 - What behaviors did you test?
 - Why were these tests important?
 
+Behaviors that were tested are core scheduling logic suck as task prioritization and greedy algorithm selection, sorting algorithms, filtering operations, recurrence automation, conflict detection, edge cases, and data validation. These tests were critical because they verify the core scheduling algorithm works correctly across different scenarios. The sorting and filtering tests ensure users can organize tasks in meaningful ways. Recurrence testing validates that daily/weekly tasks automatically regenerate, which is essential for a practical pet care system. Conflict detection tests prevent impossible schedules from being created. Edge case tests ensure the system handles unusual situations gracefully without crashing, making it robust for real-world use.
+
+
 **b. Confidence**
 
 - How confident are you that your scheduler works correctly?
 - What edge cases would you test next if you had more time?
+
+I am pretty confidentthat the scheduler works correctly. It runs smoothly in the app, and all 20 tests passed. Some edge cases that can be be tested if I had more time are UI integration tests, large-scale performance tests, timezone edge cases, real-time updates, etc. 
 
 ---
 
@@ -89,10 +98,16 @@ A tradeoff that Scheduler makes is using a greedy algorithm instead of computing
 
 - What part of this project are you most satisfied with?
 
+I'm happy with the code that Claude created. When testing, all of the tests passed on the first runthrough. It tested often as well. After each change, Claude offered tests, even when not completely necessary.
+
 **b. What you would improve**
 
 - If you had another iteration, what would you improve or redesign?
 
+I would add a visual caledar view to allow owners to see each task as it occurs throughout the day. 
+
 **c. Key takeaway**
 
 - What is one important thing you learned about designing systems or working with AI on this project?
+
+I learned that it is super important to design systems that compltely cover everything an app needs without being overly complex. A good app also needs to have good relationships that make sense.
