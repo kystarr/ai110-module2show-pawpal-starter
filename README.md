@@ -154,3 +154,68 @@ All scheduling algorithms are designed for real-world performance:
 - **Plan Generation**: O(n log n) - Dominated by sorting step
 
 The greedy scheduling approach prioritizes speed over perfect optimization, which is appropriate for daily pet care planning where "good enough" schedules are preferable to complex optimization delays.
+
+## Testing PawPal+
+
+### Running Tests
+
+Run the comprehensive test suite using either command:
+
+```bash
+# Using pytest (recommended)
+python -m pytest tests/test_pawpal.py -v
+
+# Or run directly with Python
+python tests/test_pawpal.py
+```
+
+### Test Coverage
+
+The test suite includes **20 comprehensive tests** covering:
+
+**Core Functionality:**
+- ✅ Task completion and status tracking
+- ✅ Pet-task relationship management
+- ✅ Owner-pet hierarchy
+
+**Sorting & Filtering:**
+- ✅ Duration-based sorting (ascending/descending)
+- ✅ Chronological sorting by scheduled time
+- ✅ Task type sorting (daily routine order)
+- ✅ Priority-based sorting with duration tie-breaker
+- ✅ Filtering by completion status, pet, task type, and frequency
+
+**Recurrence Logic:**
+- ✅ Daily tasks auto-create next instance (+1 day)
+- ✅ Weekly tasks auto-create next instance (+7 days)
+- ✅ As-needed tasks do NOT auto-recur
+- ✅ Due date calculation (is_due() logic)
+- ✅ Error handling for invalid task operations
+
+**Conflict Detection:**
+- ✅ Time budget overflow detection
+- ✅ Overlapping scheduled time slots
+- ✅ Exact duplicate start times
+- ✅ Adjacent tasks correctly identified as non-conflicting
+
+**Edge Cases:**
+- ✅ Empty owner (no pets)
+- ✅ No incomplete tasks
+- ✅ Zero time budget scenarios
+- ✅ Task not found error handling
+
+### Confidence Level: ⭐⭐⭐⭐ (4/5 Stars)
+
+**Reliability Assessment:**
+
+✅ **Strong Foundation** - All 20 tests pass consistently, covering critical scheduling behaviors
+
+✅ **Algorithm Verification** - Core greedy scheduling, recurrence logic, and conflict detection thoroughly tested
+
+✅ **Edge Case Handling** - Boundary conditions and error scenarios properly validated
+
+⚠️ **Minor Gaps** - UI integration tests not yet implemented (Streamlit app layer untested)
+
+⚠️ **Real-World Usage** - System is new and hasn't undergone extensive real-world usage patterns
+
+**Recommendation:** The backend logic ([pawpal_system.py](pawpal_system.py)) is production-ready for pet care scheduling. The system reliably handles complex scenarios like multi-pet households, recurring tasks, and time conflicts. Consider adding integration tests for the Streamlit UI layer to achieve 5-star confidence.

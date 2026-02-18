@@ -425,6 +425,208 @@ def test_scheduler_conflict_detection():
     print("PASS: Scheduler conflict detection works correctly!\n")
 
 
+def test_sort_tasks_chronologically():
+    """Test sorting tasks by scheduled start time in chronological order."""
+    print("=== Testing Chronological Sorting ===")
+
+    # Create tasks with different scheduled times
+    time_morning = datetime.now().replace(hour=7, minute=0, second=0, microsecond=0)
+    time_noon = datetime.now().replace(hour=12, minute=0, second=0, microsecond=0)
+    time_evening = datetime.now().replace(hour=18, minute=30, second=0, microsecond=0)
+    time_night = datetime.now().replace(hour=21, minute=0, second=0, microsecond=0)
+
+    # Create tasks in non-chronological order
+    task_noon = Task("Lunch feeding", 10, "daily", scheduled_start_time=time_noon)
+    task_night = Task("Evening play", 15, "daily", scheduled_start_time=time_night)
+    task_morning = Task("Morning walk", 30, "daily", scheduled_start_time=time_morning)
+    task_evening = Task("Dinner time", 10, "daily", scheduled_start_time=time_evening)
+
+    tasks = [task_noon, task_night, task_morning, task_evening]
+
+    # Sort chronologically (earliest first)
+    sorted_tasks = sorted(tasks, key=lambda t: t.scheduled_start_time)
+
+    # Verify chronological order
+    assert sorted_tasks[0] == task_morning, "First task should be morning (7:00 AM)"
+    assert sorted_tasks[1] == task_noon, "Second task should be noon (12:00 PM)"
+    assert sorted_tasks[2] == task_evening, "Third task should be evening (6:30 PM)"
+    assert sorted_tasks[3] == task_night, "Fourth task should be night (9:00 PM)"
+
+    # Verify times are in ascending order
+    for i in range(len(sorted_tasks) - 1):
+        assert sorted_tasks[i].scheduled_start_time < sorted_tasks[i+1].scheduled_start_time, \
+            f"Task {i} should be before task {i+1}"
+
+    print("PASS: Tasks sorted chronologically in correct order!\n")
+
+
+def test_sort_by_task_type():
+    """Test sorting tasks by task type in logical daily routine order."""
+    print("=== Testing Sort by Task Type ===")
+
+    owner = Owner("Test", 120)
+    scheduler = Scheduler(owner)
+
+    # Create tasks with different types (in random order)
+    tasks = [
+        Task("Playtime", 15, "daily", task_type="enrichment"),
+        Task("Morning walk", 30, "daily", task_type="walk"),
+        Task("Give medication", 5, "daily", task_type="meds"),
+        Task("Brush fur", 10, "daily", task_type="grooming"),
+        Task("Feed breakfast", 10, "daily", task_type="feeding"),
+        Task("Clean litter", 5, "daily", task_type="other")
+    ]
+
+    # Sort by task type
+    sorted_tasks = scheduler.sort_by_task_type(tasks)
+
+    # Verify order: feeding → meds → walk → grooming → enrichment → other
+    assert sorted_tasks[0].task_type == "feeding", "First should be feeding"
+    assert sorted_tasks[1].task_type == "meds", "Second should be meds"
+    assert sorted_tasks[2].task_type == "walk", "Third should be walk"
+    assert sorted_tasks[3].task_type == "grooming", "Fourth should be grooming"
+    assert sorted_tasks[4].task_type == "enrichment", "Fifth should be enrichment"
+    assert sorted_tasks[5].task_type == "other", "Last should be other"
+
+    print("PASS: Tasks sorted by type in correct routine order!\n")
+
+
+def test_prioritize_tasks():
+    """Test that prioritize_tasks sorts by priority first, then duration as tiebreaker."""
+    print("=== Testing Priority-Based Sorting ===")
+
+    owner = Owner("Test", 120)
+    scheduler = Scheduler(owner)
+
+    # Create tasks with mixed priorities and durations
+    tasks = [
+        Task("Low priority long", 30, "daily", priority="low"),
+        Task("High priority long", 25, "daily", priority="high"),
+        Task("Medium priority short", 10, "daily", priority="medium"),
+        Task("High priority short", 5, "daily", priority="high"),
+        Task("Low priority short", 8, "daily", priority="low"),
+        Task("Medium priority long", 20, "daily", priority="medium")
+    ]
+
+    # Use scheduler's prioritize method
+    sorted_tasks = scheduler.prioritize_tasks(tasks)
+
+    # Verify: high priority tasks come first
+    assert sorted_tasks[0].priority == "high", "First task should be high priority"
+    assert sorted_tasks[1].priority == "high", "Second task should be high priority"
+
+    # Verify: among high priority, shorter duration comes first
+    assert sorted_tasks[0].duration_minutes == 5, "Shortest high priority task first"
+    assert sorted_tasks[1].duration_minutes == 25, "Longer high priority task second"
+
+    # Verify: then medium priority
+    assert sorted_tasks[2].priority == "medium", "Third task should be medium priority"
+    assert sorted_tasks[3].priority == "medium", "Fourth task should be medium priority"
+
+    # Verify: among medium priority, shorter duration comes first
+    assert sorted_tasks[2].duration_minutes == 10, "Shorter medium priority task first"
+    assert sorted_tasks[3].duration_minutes == 20, "Longer medium priority task second"
+
+    # Verify: finally low priority
+    assert sorted_tasks[4].priority == "low", "Fifth task should be low priority"
+    assert sorted_tasks[5].priority == "low", "Sixth task should be low priority"
+
+    # Verify: among low priority, shorter duration comes first
+    assert sorted_tasks[4].duration_minutes == 8, "Shorter low priority task first"
+    assert sorted_tasks[5].duration_minutes == 30, "Longer low priority task second"
+
+    print("PASS: Tasks prioritized correctly with duration tiebreaker!\n")
+
+
+def test_exact_duplicate_scheduled_times():
+    """Test conflict detection when two tasks have identical start times."""
+    print("=== Testing Exact Duplicate Scheduled Times ===")
+
+    # Create two tasks with EXACTLY the same start time
+    same_time = datetime.now().replace(hour=10, minute=0, second=0, microsecond=0)
+
+    task1 = Task("Feed Max", 15, "daily", scheduled_start_time=same_time)
+    task2 = Task("Feed Luna", 10, "daily", scheduled_start_time=same_time)
+
+    # These should conflict (can't do both at exactly the same time)
+    assert task1.conflicts_with(task2) == True, "Tasks with same start time should conflict"
+    assert task2.conflicts_with(task1) == True, "Conflict should be symmetric"
+
+    # Calculate expected end times
+    end1 = same_time + timedelta(minutes=15)
+    end2 = same_time + timedelta(minutes=10)
+
+    assert task1.get_end_time() == end1, "Task 1 end time should be correct"
+    assert task2.get_end_time() == end2, "Task 2 end time should be correct"
+
+    print("PASS: Exact duplicate times correctly detected as conflicts!\n")
+
+
+def test_adjacent_tasks_no_conflict():
+    """Test that tasks scheduled back-to-back do NOT conflict."""
+    print("=== Testing Adjacent Tasks (No Conflict) ===")
+
+    # Create adjacent tasks: 8:00-8:30, then 8:30-9:00
+    time1 = datetime.now().replace(hour=8, minute=0, second=0, microsecond=0)
+    time2 = datetime.now().replace(hour=8, minute=30, second=0, microsecond=0)
+
+    task1 = Task("Morning walk", 30, "daily", scheduled_start_time=time1)
+    task2 = Task("Breakfast", 30, "daily", scheduled_start_time=time2)
+
+    # Task 1 ends at 8:30, Task 2 starts at 8:30 - should NOT conflict
+    assert task1.conflicts_with(task2) == False, "Adjacent tasks should NOT conflict"
+    assert task2.conflicts_with(task1) == False, "Conflict check should be symmetric"
+
+    # Verify end time of task1 equals start time of task2
+    assert task1.get_end_time() == task2.scheduled_start_time, \
+        "Task 1 should end exactly when Task 2 starts"
+
+    print("PASS: Adjacent tasks correctly identified as non-conflicting!\n")
+
+
+def test_recurring_task_not_found_error():
+    """Test that completing a task not in pet's list raises ValueError."""
+    print("=== Testing Recurring Task Not Found Error ===")
+
+    owner = Owner("Test", 60)
+    pet1 = Pet("Max", "dog", 5)
+    pet2 = Pet("Luna", "cat", 3)
+    owner.add_pet(pet1)
+    owner.add_pet(pet2)
+
+    # Create task and add to pet1
+    task = Task("Walk Max", 30, "daily")
+    pet1.add_task(task)
+
+    scheduler = Scheduler(owner)
+
+    # Try to complete the task through scheduler (should work)
+    new_task = scheduler.complete_task_with_recurrence(task)
+    assert new_task is not None, "Should successfully complete task in pet's list"
+
+    # Create a task that doesn't belong to ANY pet
+    orphan_task = Task("Orphan task", 10, "daily")
+
+    # Try to complete orphan task - should raise ValueError
+    try:
+        scheduler.complete_task_with_recurrence(orphan_task)
+        assert False, "Should have raised ValueError for task not in any pet's list"
+    except ValueError as e:
+        assert "not found in any pet's task list" in str(e), \
+            "Error message should indicate task not found"
+        print(f"  Correctly raised ValueError: {e}")
+
+    # Try to complete task through wrong pet - should raise ValueError
+    try:
+        pet2.complete_recurring_task(task)  # task belongs to pet1, not pet2
+        assert False, "Should have raised ValueError for task not in this pet's list"
+    except ValueError as e:
+        assert "not found" in str(e), "Error message should indicate task not found"
+        print(f"  Correctly raised ValueError: {e}")
+
+    print("PASS: Recurring task error handling works correctly!\n")
+
+
 def run_all_tests():
     """Run all tests."""
     print("=" * 60)
@@ -432,20 +634,37 @@ def run_all_tests():
     print("=" * 60)
 
     try:
+        # Basic functionality tests
         test_task_completion()
         test_task_addition()
         test_filter_by_completion_status()
         test_filter_by_pet()
+
+        # Sorting tests
         test_sort_by_duration()
+        test_sort_tasks_chronologically()
+        test_sort_by_task_type()
+        test_prioritize_tasks()
+
+        # Due date logic tests
         test_task_is_due_daily()
         test_task_is_due_weekly()
+
+        # Time conflict detection
         test_detect_time_conflicts()
+
+        # Recurrence tests
         test_recurring_task_daily()
         test_recurring_task_weekly()
         test_recurring_task_as_needed()
         test_scheduler_complete_with_recurrence()
+        test_recurring_task_not_found_error()
+
+        # Scheduling conflict tests
         test_task_conflicts_detection()
         test_scheduler_conflict_detection()
+        test_exact_duplicate_scheduled_times()
+        test_adjacent_tasks_no_conflict()
 
         print("=" * 60)
         print("ALL TESTS PASSED!")
